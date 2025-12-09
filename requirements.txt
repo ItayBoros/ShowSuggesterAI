@@ -1,3 +1,7 @@
 openai 
 pandas
 python-dotenv
+thefuzz
+numpy
+usearch
+python-Levenshtein
