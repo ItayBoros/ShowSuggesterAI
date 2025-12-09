@@ -25,3 +25,7 @@ models/
 *.mp4
 *.zip
 *.tar.gz
+
+__pycache__/
+*.pkl
+*.log
