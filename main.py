@@ -165,13 +165,13 @@ def generate_poster(title, description):
                 "content": f"Title: {title}. Plot: {description}"
             }]
         )
-        safe_prompt = sanitizer_response.choices[0].message.content + "dont gene"
+        safe_prompt = sanitizer_response.choices[0].message.content + "dont generate any text in the image"
     except Exception as e:
         logger.error(f"Sanitization failed: {e}")
         safe_prompt = f"A cinematic poster for a show titled {title}, dramatic lighting, mystery atmosphere."
     
     #generate the image using the safe prompt
-    print(f"   [Generating poster for '{title}'... this takes ~10 seconds]")
+    print(f"   [Generating poster for '{title}'...]")
     try:
         response = client.images.generate(
             model="dall-e-3", 

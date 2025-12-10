@@ -26,14 +26,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def get_embedding(text):
-    #remove new lines
-    text = text.replace("\n", " ")
+    try:
+        #remove new lines
+        text = text.replace("\n", " ")
 
-    response = client.embeddings.create(
-        input=text,
-        model="text-embedding-3-small"
-    )
-    return response.data[0].embedding
+        response = client.embeddings.create(
+            input=text,
+            model="text-embedding-3-small"
+        )
+        return response.data[0].embedding
+    except Exception as e:
+        logger.error(f"Failed to get embedding for text: {text[:30]}... Error: {e}")
+        return None
 
 def main():
     logger.info("Loading CSV file...")
@@ -58,7 +62,14 @@ def main():
             title = row['Title']
             description = row['Description']
 
-            vector = get_embedding(description)
+            # Add Genre to Description
+            if 'Genres' in row and pd.notna(row['Genres']):
+                genre = row['Genres']
+                text_to_embed = f"Genre: {genre}. Plot: {description}"
+            else:
+                text_to_embed = description
+
+            vector = get_embedding(text_to_embed)
 
             if vector:
                 embedding_dict[title] = vector
