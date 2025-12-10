@@ -5,3 +5,5 @@ thefuzz
 numpy
 usearch
 python-Levenshtein
+requests
+Pillow

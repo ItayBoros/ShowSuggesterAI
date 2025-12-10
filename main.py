@@ -3,8 +3,13 @@ import logging
 import sys
 import os
 import numpy as np
+import requests
+from io import BytesIO
+from PIL import Image
 from thefuzz import process
 from usearch.index import Index
+from openai import OpenAI
+from dotenv import load_dotenv
 
 #configurations
 VECTOR_FILE = "show_vectors.pkl"
@@ -20,6 +25,9 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+load_dotenv()
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def load_data():
     if not os.path.exists(VECTOR_FILE):
@@ -102,8 +110,9 @@ def get_recommendations(user_shows, show_data):
             continue
         
         #convert dist to similarity score
+        #divide by 2 to curve the results higher
         dist = found_distances[i]
-        score_percent = int((1 - dist) * 100)
+        score_percent = int((1 - (dist / 2)) * 100)
         
         print(f"{title} ({score_percent}%)")
         recommendations.append(title)
@@ -114,14 +123,83 @@ def get_recommendations(user_shows, show_data):
     
     return recommendations
 
+def generate_creative_show(basis_shows):
+    shows_str = ", ".join(basis_shows)
+    prompt = f"""Invent a NEW TV show that combines the style/genre of these shows: {shows_str}.
+    Provide exactly two lines:
+    Line 1: The Title
+    Line 2: A one-sentence plot summary.
+    Do not add labels like "Title:" or "Plot:".
+    """
+
+    try:
+        response  = client.chat.completions.create(
+            model = "gpt-5-nano-2025-08-07",
+            messages = [
+                {"role": "user", "content": prompt}
+            ],
+        )
+        content = response.choices[0].message.content.strip().split("\n")
+        content = [line for line in content if line.strip()]
+
+        if len(content) >= 2:
+            return content[0], content[1]
+        else :
+            return "Mystery Show", content[0]
+    except Exception as e:
+        logger.error(f"GPT Error: {e}")
+        return "Unknown Show", "Could not generate plot."
+
+def generate_poster(title, description):
+    print(f"   [Generating poster for '{title}'...]")
+
+    # sanitize the prompt for safety
+    try:
+        sanitizer_response = client.chat.completions.create(
+            model="gpt-5-nano-2025-08-07",
+            messages=[{
+                "role": "system", 
+                "content": "You are an expert art director. Rewrite the following TV show plot into a visual description for a poster. It must be SAFE for work and strictly adhere to content policies (NO drugs, NO guns, NO blood, NO violence). Focus on the mood, lighting, atmosphere, and symbolic elements instead."
+            }, {
+                "role": "user", 
+                "content": f"Title: {title}. Plot: {description}"
+            }]
+        )
+        safe_prompt = sanitizer_response.choices[0].message.content + "dont gene"
+    except Exception as e:
+        logger.error(f"Sanitization failed: {e}")
+        safe_prompt = f"A cinematic poster for a show titled {title}, dramatic lighting, mystery atmosphere."
+    
+    #generate the image using the safe prompt
+    print(f"   [Generating poster for '{title}'... this takes ~10 seconds]")
+    try:
+        response = client.images.generate(
+            model="dall-e-3", 
+            prompt=safe_prompt,
+            size="1024x1024",
+            quality="standard",
+            n=1,
+        )
+        image_url = response.data[0].url
+        
+        #download and show image
+        img_data = requests.get(image_url).content
+        img = Image.open(BytesIO(img_data))
+        img.show() # opens the image 
+        logger.info(f"Poster generated for {title}")
+        
+    except Exception as e:
+        logger.error(f"Image Gen Error: {e}")
+        print("   (Could not generate image due to API error)")
+
 def main():
     #load all show titles
     show_data = load_data()
     all_titles = list(show_data.keys())
 
-    print("Welcome to ShowSuggesterAI!")   
+    print("\n-----Welcome to ShowSuggesterAI!-----")   
     while True:
-        print("\n\nWhich TV shows did you really like watching? Separate them by a comma.")
+        print("\nWhich TV shows did you really like watching? Separate them by a comma.")
         print("Make sure to enter more than 1 show.")
         user_text = input("Input: ")
 
@@ -134,7 +212,24 @@ def main():
 
             recommendations = get_recommendations(confirmed_shows, show_data)
             logger.info(f"Recommendations generated: {recommendations}")
-            break
+
+            #generate creative shows
+            print("\nI have also created just for you two shows which I think you would love.")
+            
+            #show 1 
+            title1, plot1 = generate_creative_show(confirmed_shows)
+            print(f"\nShow #1 is based on the fact that you loved the input shows that you gave me.")
+            print(f"Its name is {title1} and it is about {plot1}")
+            generate_poster(title1, plot1)
+
+            #show 2
+            title2, plot2 = generate_creative_show(recommendations)
+            print(f"\nShow #2 is based on the shows that I recommended for you.")
+            print(f"Its name is {title2} and it is about {plot2}")
+            generate_poster(title2, plot2)
+            
+            print("\nHere are also the 2 tv show ads. Hope you like them!")
+
         else:
             print("Sorry about that. Let's try again.")
 
