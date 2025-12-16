@@ -38,7 +38,7 @@ def get_embedding(text):
     except Exception as e:
         logger.error(f"Failed to get embedding for text: {text[:30]}... Error: {e}")
         return None
-
+    
 def main():
     logger.info("Loading CSV file...")
 
@@ -61,13 +61,34 @@ def main():
         try:
             title = row['Title']
             description = row['Description']
-
             # Add Genre to Description
-            if 'Genres' in row and pd.notna(row['Genres']):
-                genre = row['Genres']
-                text_to_embed = f"Genre: {genre}. Plot: {description}"
-            else:
-                text_to_embed = description
+            genre = row['Genres'] if 'Genres' in row and pd.notna(row['Genres']) else "Unknown Genre"
+            actors = row['Actors'] if 'Actors' in row and pd.notna(row['Actors']) else "Unknown Cast"
+            year = row['Years'] if 'Years' in row and pd.notna(row['Years']) else "Unknown Year"
+
+            if 'Rating' in row and pd.notna(row['Rating']):
+                try:
+                    r = float(row['Rating'])
+                    if r >= 8.5:
+                        rating_text = "Critically Acclaimed Masterpiece."
+                    elif r >= 7.5:
+                        rating_text = "Highly Rated."
+                except:
+                    pass
+            
+            duration_text = ""
+            if 'EpisodeDuration(in Minutes)' in row and pd.notna(row['EpisodeDuration(in Minutes)']):
+                duration_text = f"{row['EpisodeDuration(in Minutes)']} min episodes."
+
+            text_to_embed = (
+                f"Title: {title}. "
+                f"Year: {year}. "
+                f"Genre: {genre}. "
+                f"{rating_text} "     
+                f"Format: {duration_text} "
+                f"Starring: {actors}. "
+                f"Plot: {description}"
+            )
 
             vector = get_embedding(text_to_embed)
 
@@ -75,17 +96,22 @@ def main():
                 embedding_dict[title] = vector
                 if index % 10 == 0:
                     logger.info(f"Processed {index} shows...")
+
         except KeyError as e:
             logger.error(f"Column missing in CSV row {index}: {e}")
+
         except Exception as e:
             logger.error(f"Unexpected error at row {index}: {e}")
+
     if embedding_dict:
         try:
             with open(OUTPUT_FILE_PATH, 'wb') as f:
                 pickle.dump(embedding_dict, f)
             logger.info(f"Embeddings saved to {OUTPUT_FILE_PATH}")
+
         except Exception as e:
             logger.error(f"Error saving embeddings: {e}")
+            
     else:
         logger.warning("No embeddings were generated. Check CSV.")
 

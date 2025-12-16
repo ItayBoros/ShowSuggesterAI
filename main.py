@@ -2,6 +2,7 @@ import pickle
 import logging
 import sys
 import os
+from time import sleep
 import numpy as np
 import requests
 from io import BytesIO
@@ -10,6 +11,7 @@ from thefuzz import process
 from usearch.index import Index
 from openai import OpenAI
 from dotenv import load_dotenv
+import create_embeddings
 
 #configurations
 VECTOR_FILE = "show_vectors.pkl"
@@ -21,7 +23,6 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(LOG_FILE),
-        logging.StreamHandler(sys.stdout) # Prints to terminal
     ]
 )
 logger = logging.getLogger(__name__)
@@ -32,7 +33,11 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 def load_data():
     if not os.path.exists(VECTOR_FILE):
         logger.error(f"{VECTOR_FILE} not found! Run create_embeddings.py first.")
-        sys.exit(1) #stop the program
+        print("\n--- FIRST TIME SETUP DETECTED ---")
+        print("We need to analyze the show database. This will take 2-3 minutes.")
+        print("Please wait...\n")
+        create_embeddings.main()  #create the embeddings file
+        print("\n--- Setup Complete! Starting App ---\n")
 
     try:
         with open(VECTOR_FILE, 'rb') as f:
@@ -113,8 +118,8 @@ def get_recommendations(user_shows, show_data):
         #divide by 2 to curve the results higher
         dist = found_distances[i]
         score_percent = int((1 - (dist / 2)) * 100)
-        
-        print(f"{title} ({score_percent}%)")
+
+        print(f"  {count+1}. {title}  ({score_percent}%)")
         recommendations.append(title)
 
         count += 1
@@ -197,7 +202,9 @@ def main():
     show_data = load_data()
     all_titles = list(show_data.keys())
 
-    print("\n-----Welcome to ShowSuggesterAI!-----")   
+    print("\n" + "=" * 50)
+    print("                 ShowSuggesterAI  ")
+    print("=" * 50 + "\n")   
     while True:
         print("\nWhich TV shows did you really like watching? Separate them by a comma.")
         print("Make sure to enter more than 1 show.")
@@ -208,6 +215,7 @@ def main():
 
         if confirmed_shows:
             print(f"\nGreat! genetaring recommendations now...")
+            sleep(1.5) #simulate thinking
             logger.info(f"user confirmed: {confirmed_shows}")
 
             recommendations = get_recommendations(confirmed_shows, show_data)
@@ -219,15 +227,16 @@ def main():
             #show 1 
             title1, plot1 = generate_creative_show(confirmed_shows)
             print(f"\nShow #1 is based on the fact that you loved the input shows that you gave me.")
-            print(f"Its name is {title1} and it is about {plot1}")
+            print(f"Show #1 – {title1}")
+            print(f"  {plot1}\n")
             generate_poster(title1, plot1)
 
             #show 2
             title2, plot2 = generate_creative_show(recommendations)
             print(f"\nShow #2 is based on the shows that I recommended for you.")
-            print(f"Its name is {title2} and it is about {plot2}")
+            print(f"Show #2 – {title2}")
+            print(f"  {plot2}\n")
             generate_poster(title2, plot2)
-            
             print("\nHere are also the 2 tv show ads. Hope you like them!")
 
         else:
