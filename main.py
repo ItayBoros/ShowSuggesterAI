@@ -115,9 +115,18 @@ def get_recommendations(user_shows, show_data):
             continue
         
         #convert dist to similarity score
-        #divide by 2 to curve the results higher
         dist = found_distances[i]
-        score_percent = int((1 - (dist / 2)) * 100)
+        sigma = 4.0 
+        sim_score = np.exp(-(dist ** 2) / sigma)
+        score_percent = int(sim_score * 100)
+        #cosmetic fix: reduce score a bit for each next recommendation
+        score_percent = score_percent - count
+        
+        #final caps
+        if score_percent > 99:
+            score_percent = 99
+        if score_percent < 1:
+            score_percent = 1
 
         print(f"  {count+1}. {title}  ({score_percent}%)")
         recommendations.append(title)
@@ -214,7 +223,7 @@ def main():
         confirmed_shows= get_valid_show_name(user_text, all_titles)
 
         if confirmed_shows:
-            print(f"\nGreat! genetaring recommendations now...")
+            print(f"\nGreat! generating recommendations now...")
             sleep(1.5) #simulate thinking
             logger.info(f"user confirmed: {confirmed_shows}")
 

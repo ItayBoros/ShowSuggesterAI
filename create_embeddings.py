@@ -19,8 +19,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler()
+        logging.FileHandler(LOG_FILE)
     ]
 )
 logger = logging.getLogger(__name__)
@@ -111,7 +110,7 @@ def main():
 
         except Exception as e:
             logger.error(f"Error saving embeddings: {e}")
-            
+
     else:
         logger.warning("No embeddings were generated. Check CSV.")
 
