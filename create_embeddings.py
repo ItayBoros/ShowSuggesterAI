@@ -2,6 +2,8 @@ import os
 from dotenv import load_dotenv
 import pickle
 import pandas as pd
+from usearch.index import Index
+import numpy as np
 from openai import OpenAI
 import logging
 
@@ -12,7 +14,8 @@ client = OpenAI(api_key=api_key)
 
 #configurations
 CSV_FILE_PATH = 'imdb_tvshows.csv'
-OUTPUT_FILE_PATH = 'show_vectors.pkl'
+DATA_FILE = 'show_vectors.pkl'
+INDEX_FILE = 'show_vectors.usearch'
 LOG_FILE = "setup.log"
 
 logging.basicConfig(
@@ -52,7 +55,9 @@ def main():
         logger.error(f"Error loading CSV file: {e}")
         return
     
-    embedding_dict = {}
+    title_to_vector = {}
+    ordered_titles = []
+    vectors_list = []
 
     logger.info("Start embedding generation process...")
 
@@ -65,6 +70,7 @@ def main():
             actors = row['Actors'] if 'Actors' in row and pd.notna(row['Actors']) else "Unknown Cast"
             year = row['Years'] if 'Years' in row and pd.notna(row['Years']) else "Unknown Year"
 
+            rating_text = ""
             if 'Rating' in row and pd.notna(row['Rating']):
                 try:
                     r = float(row['Rating'])
@@ -92,7 +98,10 @@ def main():
             vector = get_embedding(text_to_embed)
 
             if vector:
-                embedding_dict[title] = vector
+                # Store data in three places
+                title_to_vector[title] = vector
+                ordered_titles.append(title)
+                vectors_list.append(vector)
                 if index % 10 == 0:
                     logger.info(f"Processed {index} shows...")
 
@@ -102,14 +111,28 @@ def main():
         except Exception as e:
             logger.error(f"Unexpected error at row {index}: {e}")
 
-    if embedding_dict:
+    if vectors_list:
         try:
-            with open(OUTPUT_FILE_PATH, 'wb') as f:
-                pickle.dump(embedding_dict, f)
-            logger.info(f"Embeddings saved to {OUTPUT_FILE_PATH}")
+            #save Metadata
+            data_package = {
+                "dict": title_to_vector,
+                "list": ordered_titles
+            }
+            with open(DATA_FILE, 'wb') as f:
+                pickle.dump(data_package, f)
+
+            #build and save usearch index
+            vectors_np = np.array(vectors_list, dtype=np.float32)
+            dim = vectors_np.shape[1]
+            
+            index = Index(ndim=dim, metric='cos')
+            index.add(np.arange(len(vectors_np)), vectors_np)
+            index.save(INDEX_FILE)
+            
+            logger.info(f"Success! Saved {DATA_FILE} and {INDEX_FILE}")
 
         except Exception as e:
-            logger.error(f"Error saving embeddings: {e}")
+            logger.error(f"Error saving files: {e}")
 
     else:
         logger.warning("No embeddings were generated. Check CSV.")

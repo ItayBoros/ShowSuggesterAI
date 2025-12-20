@@ -3,6 +3,7 @@ import logging
 import sys
 import os
 from time import sleep
+from usearch.index import Index
 import numpy as np
 import requests
 from io import BytesIO
@@ -16,6 +17,7 @@ import create_embeddings
 #configurations
 VECTOR_FILE = "show_vectors.pkl"
 LOG_FILE = "app.log"
+INDEX_FILE = 'show_vectors.usearch'
 TOP_N_RECOMMENDATIONS = 5
 
 logging.basicConfig(
@@ -31,8 +33,8 @@ load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def load_data():
-    if not os.path.exists(VECTOR_FILE):
-        logger.error(f"{VECTOR_FILE} not found! Run create_embeddings.py first.")
+    if not os.path.exists(VECTOR_FILE) or not os.path.exists(INDEX_FILE):
+        logger.error(f"Missing {VECTOR_FILE} or {INDEX_FILE}. Run create_embeddings.py first.")
         print("\n--- FIRST TIME SETUP DETECTED ---")
         print("We need to analyze the show database. This will take 2-3 minutes.")
         print("Please wait...\n")
@@ -41,9 +43,17 @@ def load_data():
 
     try:
         with open(VECTOR_FILE, 'rb') as f:
-            data = pickle.load(f)
-        logger.info(f"Successfully loaded {len(data)} shows from database")
-        return data
+            data_package = pickle.load(f)
+        logger.info(f"Successfully loaded {len(data_package['list'])} shows from database")
+        
+        #load the O(1) index
+        # We get dimensions from the first vector in the dict
+        first_vec = next(iter(data_package['dict'].values()))
+        dim = len(first_vec)
+
+        index = Index(ndim=dim, metric='cos')
+        index.load(INDEX_FILE) #fast load from disk
+        return data_package, index
     except Exception as e:
         logger.error(f"Failed to load pickle file: {e}")
         sys.exit(1)
@@ -73,49 +83,44 @@ def get_valid_show_name(user_input, all_show_name):
     else:
         return None
     
-def get_recommendations(user_shows, show_data):
+def get_recommendations(user_shows, data_package, index):
+    show_dict = data_package['dict']
+    show_list = data_package['list']
     #get vectors for the user shows
     user_vectors = []
     for show in user_shows:
-        user_vectors.append(show_data[show])
+        if show in show_dict:
+            user_vectors.append(show_dict[show])
     
+    if not user_vectors: return []
+
     #calculate the average vector == user profile
-    average_vector = np.mean(user_vectors, axis=0)
+    average_vector = np.mean(np.array(user_vectors, dtype=np.float32), axis=0).astype(np.float32)
 
-    #preare the index
-    all_titles = list(show_data.keys())
-    #convent dict values to a matrix
-    all_vectors = np.array(list(show_data.values()), dtype=np.float32)
-    vector_dim =len(all_vectors[0])
-    
-    # use cosine similarity for better results
-    index = Index(ndim=vector_dim, metric='cosine')
-    index.add(np.arange(len(all_vectors)), all_vectors)
-
-    #search for the closest shows
-    search_count = TOP_N_RECOMMENDATIONS + len(user_shows)
+    search_count = TOP_N_RECOMMENDATIONS + len(user_shows) + 5
     matches = index.search(average_vector, search_count)
 
     found_indices = matches.keys.flatten()
-    found_distances = matches.distances.flatten()
+    found_dists = matches.distances.flatten()
 
     print("\nHere are the tv shows that i think you would love:")
     recommendations = []
     count = 0
 
     for i, idx in enumerate(found_indices):
+        idx = int(idx)
         #make sure index is valid
-        if idx >= len(all_titles):
+        if idx >= len(show_list):
             continue
-
-        title = all_titles[idx]
+       
+        title = show_list[idx]
         
         #skip shows the user already input
         if title in user_shows:
             continue
         
         #convert dist to similarity score
-        dist = found_distances[i]
+        dist = float(found_dists[i])
         sigma = 4.0 
         sim_score = np.exp(-(dist ** 2) / sigma)
         score_percent = int(sim_score * 100)
@@ -207,9 +212,8 @@ def generate_poster(title, description):
         print("   (Could not generate image due to API error)")
 
 def main():
-    #load all show titles
-    show_data = load_data()
-    all_titles = list(show_data.keys())
+    data_package, index = load_data()
+    all_titles = data_package['list']
 
     print("\n" + "=" * 50)
     print("                 ShowSuggesterAI  ")
@@ -227,7 +231,7 @@ def main():
             sleep(1.5) #simulate thinking
             logger.info(f"user confirmed: {confirmed_shows}")
 
-            recommendations = get_recommendations(confirmed_shows, show_data)
+            recommendations = get_recommendations(confirmed_shows, data_package,index)
             logger.info(f"Recommendations generated: {recommendations}")
 
             #generate creative shows
@@ -249,7 +253,7 @@ def main():
             print("\nHere are also the 2 tv show ads. Hope you like them!")
 
         else:
-            print("Sorry about that. Let's try again.")
+            print("Sorry about that. Lets try again, please make sure to write the names of the tv shows correctly")
 
 if __name__ == "__main__":
     main()
